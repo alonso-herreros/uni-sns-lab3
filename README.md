@@ -6,6 +6,7 @@
 [![Redes Software][shield-sns]][sns]
 
 **Grupo x**
+
 * `100493990` - Alonso Herreros Copete
 * `100499589` - Bryan Elías Todita Todita
 
@@ -36,7 +37,7 @@ pre {
 
 ### Modificaciones a `scenario.py`
 
-### Modificaciones a `simple_router.py`
+### Modificaciones a `simple_router.py` (2)
 
 ### Wireshark: tráfico para el comando `h1 ping -c 2 h2`
 
