@@ -1,0 +1,73 @@
+:root {
+    /* These are overriden in my preview so in dark mode it's fine */
+    --vscode-editor-font-family: "Fira Code", Consolas, "Courier New", monospace;
+    --vscode-editor-font-features:
+        "zero", "cv01", "cv02", "cv06", "cv15", "cv18", "ss01", "ss02", "ss03", "ss04", "ss08";
+    --vscode-textPreformat-background: #eee;
+    --vscode-textCodeBlock-background: #fbfbfb;
+    --vscode-textBlockQuote-background: #f9f9f9;
+    --vscode-widget-border: #ddd;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    break-after: avoid;
+}
+h1, h2 {
+    font-variant: small-caps;
+}
+h1 { text-align: center; }
+
+h2:has(+ h1) {
+    text-align: center;
+    margin-bottom: 0.2em;
+    font-size: 1.5em;
+    font-weight: bold;
+}
+
+p { text-align: justify; }
+
+.katex { font-size: 1.05em; }
+
+/* #region Inline and fenced code */
+code {
+    font-size: 80%;
+    font-feature-settings: var(--vscode-editor-font-features);
+    white-space: pre-wrap;
+    background-color: var(--vscode-textPreformat-background);
+    border-radius: 4px;
+    padding: 1px 3px;
+}
+pre {
+    background-color: var(--vscode-textCodeBlock-background);
+    border: 1px solid var(--vscode-widget-border);
+    font-family: "Roboto Mono", sans-serif;
+    font-size: 10pt;
+}
+
+img {
+    background-color: var(--vscode-textBlockQuote-background);
+    padding: 5px;
+    border-radius: 4px;
+}
+/* #endregion Inline and Fenced code */
+
+/* #region Blockquotes */
+blockquote {
+    background: var(--vscode-textBlockQuote-background);
+    border-color: var(--vscode-textBlockQuote-border);
+    margin: 16px 0;
+    padding: 2px 16px 0 10px;
+    border-left-width: 5px;
+    border-left-style: solid;
+    border-radius: 5px;
+}
+/* #endregion Blockquotes */
+
+/* #region Custom classes */
+.center { text-align: center; }
+
+p.caption {
+    margin-top: -14px;
+    break-before: avoid;
+}
+/* #endregion Custom classes */
