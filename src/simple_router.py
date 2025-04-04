@@ -23,13 +23,14 @@ from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types
 
 
-class SimpleSwitch13(app_manager.RyuApp):
+class SimpleRouter(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
-        super(SimpleSwitch13, self).__init__(*args, **kwargs)
+        super(SimpleRouter, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
 
+    # pylint: disable=no-member
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
@@ -63,6 +64,7 @@ class SimpleSwitch13(app_manager.RyuApp):
                                     match=match, instructions=inst)
         datapath.send_msg(mod)
 
+    # pylint: disable=no-member
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
         # If you hit this you might want to increase
