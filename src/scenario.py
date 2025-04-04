@@ -46,6 +46,14 @@ class StarTopo(Topo):
             host = self.addHost(**opts)
             self.addLink(host, switch)
 
+class ArpHost(Host):
+    "Host that's initialized with an ARP cache"
+
+    def config(self, arpEntries={}, **params):
+        r = super().config(**params)
+        for ip, mac in arpEntries:  self.setARP(ip, mac)
+        return r
+
 
 def int2mac(mac_int: int):
     hex_str = f'{mac_int:012x}'
