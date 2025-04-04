@@ -2,6 +2,7 @@
 
 from mininet.net import Mininet
 from mininet.topo import Topo
+from mininet.node import Host
 from mininet.log import setLogLevel
 from mininet.cli import CLI
 from mininet.node import RemoteController, OVSSwitch
@@ -28,6 +29,13 @@ INTERFACES = {
 
 # Define each host through its (hopefully) only interface
 HOSTS = [ ifaces[0] for hname, ifaces in INTERFACES.items() if hname[0]=='h' ]
+
+# From the interfaces, define the ARP table
+# ARP_DICT = {i['ip']: i['mac'] for dev in INTERFACES.values() for i in dev}
+ARP_ENTRIES = [
+        (dev['ip'].split('/')[0], dev['mac']) # IP address before the '/'
+        for node in INTERFACES.values() for dev in node
+    ]
 
 
 class StarTopo(Topo):
@@ -64,6 +72,7 @@ def simpleTestCLI():
 
     net = Mininet(
             topo       = StarTopo(HOSTS),
+            host       = partial(ArpHost, arpEntries=ARP_ENTRIES),
             controller = partial(RemoteController, ip='127.0.0.1'),
             switch     = partial(OVSSwitch, protocols='OpenFlow13')
         )
