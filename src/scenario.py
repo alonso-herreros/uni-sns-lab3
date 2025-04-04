@@ -31,7 +31,9 @@ HOSTS = [ ifaces[0] for hname, ifaces in INTERFACES.items() if hname[0]=='h' ]
 
 
 class StarTopo(Topo):
-    'A single switch connected to the defined hosts'
+    """
+    A single switch connected to the defined hosts
+    """
 
     DEFAULT_HOSTS = [{}, {}] # Defaults to two hosts with default config
 
