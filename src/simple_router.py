@@ -20,7 +20,7 @@ from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
-from ryu.lib.packet.ether_types import ETH_TYPE_LLDP, ETH_TYPE_IPV6
+from ryu.lib.packet import ether_types as etypes
 
 
 class SimpleRouter(app_manager.RyuApp):
@@ -81,7 +81,7 @@ class SimpleRouter(app_manager.RyuApp):
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
 
-        if eth.ethertype in [ ETH_TYPE_LLDP, ETH_TYPE_IPV6 ]:
+        if eth.ethertype in [ etypes.ETH_TYPE_LLDP, etypes.ETH_TYPE_IPV6 ]:
             # ignore lldp packet
             return
         dst = eth.dst
