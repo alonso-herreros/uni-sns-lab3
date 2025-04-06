@@ -21,6 +21,7 @@ from ryu.ofproto import ofproto_v1_3
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types as etypes
+from ryu.lib.packet import ipv4
 
 
 class SimpleRouter(app_manager.RyuApp):
@@ -80,6 +81,7 @@ class SimpleRouter(app_manager.RyuApp):
 
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
+        ip  = pkt.get_protocol(ipv4.ipv4)
 
         if eth.ethertype in [ etypes.ETH_TYPE_LLDP, etypes.ETH_TYPE_IPV6 ]:
             # ignore lldp packet
@@ -95,9 +97,15 @@ class SimpleRouter(app_manager.RyuApp):
         # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
 
+        out_port = None
+        actions = []
         if dst in self.mac_to_port[dpid]:
             out_port = self.mac_to_port[dpid][dst]
-        else:
+        elif ip:
+            self.logger.info(f' IPv4 {ip.src} to {ip.dst} {ip.ttl}')
+
+        if not out_port:
+            self.logger.info(' no match, flooding')
             out_port = ofproto.OFPP_FLOOD
 
         actions = [parser.OFPActionOutput(out_port)]
