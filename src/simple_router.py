@@ -22,14 +22,46 @@ from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types as etypes
 from ryu.lib.packet import ipv4
+from ipaddress import ip_network, ip_address
 
+# TODO: this is a hard copy of info in scenario.py. Gotta change that.
+INTERFACES = {
+    'h1': [{
+            'mac': '00:00:00:00:00:01',
+            'ip': '10.0.0.2/24'
+        }],
+    'h2': [{
+            'mac': '00:00:00:00:00:02',
+            'ip': '10.0.1.2/24'
+        }],
+    's1': [{
+            'mac': '70:88:99:00:00:01',
+            'ip': '10.0.0.1/24'
+        }, {
+            'mac': '70:88:99:10:00:02',
+            'ip': '10.0.1.1/24'
+        }],
+}
 
+# This app supports ONE router.
 class SimpleRouter(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
 
     def __init__(self, *args, **kwargs):
         super(SimpleRouter, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
+        # This routing doesn't support next hop, just output interface.
+        # I'm making a distinction between 'interfaces' data from INTERFACES
+        # and 'ports' data from the datapath
+        self.routes = [
+            {'net': ip_network(iface['ip'], strict=False),
+             'out_iface': n}
+            for n, iface in enumerate(INTERFACES['s1'])
+        ]
+        self.arpDict = {
+            iface['ip'].split('/')[0]: iface['mac']
+            for dev in INTERFACES.values() for iface in dev
+        }
 
     # pylint: disable=no-member
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
