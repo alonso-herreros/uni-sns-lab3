@@ -136,11 +136,12 @@ class SimpleRouter(app_manager.RyuApp):
         elif ip:
             self.logger.info(f' IPv4 {ip.src} to {ip.dst} {ip.ttl}')
 
-        if not out_port:
-            self.logger.info(' no match, flooding')
-            out_port = ofproto.OFPP_FLOOD
-
-        actions = [parser.OFPActionOutput(out_port)]
+        # Fallback
+        if not actions:
+            if not out_port:
+                self.logger.info(' no match, flooding')
+                out_port = ofproto.OFPP_FLOOD
+            actions += [parser.OFPActionOutput(out_port)]
 
         # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
