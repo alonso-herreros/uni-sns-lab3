@@ -135,6 +135,7 @@ class SimpleRouter(app_manager.RyuApp):
             out_port = self.mac_to_port[dpid][dst]
         elif ip:
             self.logger.info(f' IPv4 {ip.src} to {ip.dst} {ip.ttl}')
+            actions = self.ip_in_handler(datapath, ip)
 
         # Fallback
         if not actions:
@@ -160,3 +161,35 @@ class SimpleRouter(app_manager.RyuApp):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
+
+    def ip_in_handler(self, datapath, ip):
+        ip_dest = ip_address(ip.dst)
+
+        out_port = None
+        for rule in self.routes:
+            if ip_dest in rule['net']:
+                if 'out_port' not in rule:
+                    # Map an 'interface' as defined in INTERFACES to a real port
+                    out_mac = INTERFACES['s1'][rule['out_iface']]['mac']
+                    rule['out_port'] = next((
+                        port_n for port_n, port in datapath.ports.items()
+                        if port.hw_addr == out_mac and port.config != 1
+                    ))
+                out_port = rule['out_port']
+
+        if not out_port:  return None
+
+        self.logger.info(f'  route match to output port {out_port}')
+        return self.actionsForward(
+            datapath, out_port,
+            datapath.ports[out_port].hw_addr, self.arpDict[ip.dst]
+        )
+
+    def actionsForward(self, datapath, port, src, dst):
+        parser = datapath.ofproto_parser
+        return [
+            parser.OFPActionDecNwTtl(),
+            parser.OFPActionSetField(eth_src=src),
+            parser.OFPActionSetField(eth_dst=dst),
+            parser.OFPActionOutput(port)
+        ]
