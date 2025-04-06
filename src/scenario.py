@@ -10,17 +10,21 @@ from functools import partial
 # Define all interfaces once and only once
 INTERFACES = {
     'h1': [{
+            'link': 'A',
             'mac': '00:00:00:00:00:01',
             'ip': '10.0.0.2/24'
         }],
     'h2': [{
+            'link': 'B',
             'mac': '00:00:00:00:00:02',
             'ip': '10.0.1.2/24'
         }],
     's1': [{
+            'link': 'A',
             'mac': '70:88:99:00:00:01',
             'ip': '10.0.0.1/24'
         }, {
+            'link': 'B',
             'mac': '70:88:99:10:00:02',
             'ip': '10.0.1.1/24'
         }],
@@ -52,6 +56,31 @@ def int2mac(mac_int: int):
     return ':'.join(hex_str[i:i+2] for i in range(0,12,2))
 
 
+def setup_switch_ports(net):
+    # Reverse dict: mapping each link label to *some* host associated with it
+    links_to_hosts = {
+        ifaces[0]['link']: name for name, ifaces in INTERFACES.items()
+        if 'link' in ifaces[0] and name.startswith('h')
+    }
+
+    # Loop only over switches
+    switches = ( (k, v) for k, v in INTERFACES.items() if k.startswith('s') )
+    for sw_name, ifaces_data in switches:
+        switch = net.get(sw_name)
+
+        for i, iface_data in enumerate(ifaces_data):
+            try:
+                # Find which Intf object this data should describe
+                reference_host = net.get(links_to_hosts[iface_data['link']])
+                iface = switch.connectionsTo(reference_host)[0][0]
+
+                if 'mac' in iface_data:  iface.setMAC(iface_data['mac'])
+                if 'ip'  in iface_data:  iface.setIP(iface_data['ip'])
+
+            except (KeyError, IndexError):
+                print(f"WARN: Couldn't set up {sw_name}'s interface {i}.")
+
+
 def simpleTestCLI():
 
     net = Mininet(
@@ -60,6 +89,8 @@ def simpleTestCLI():
             switch     = partial(OVSSwitch, protocols='OpenFlow13')
         )
     net.start()
+    setup_switch_ports(net)
+
     CLI(net)
     net.stop()
 
