@@ -10,15 +10,6 @@
 * `100493990` - Alonso Herreros Copete
 * `100499589` - Bryan Elías Todita Todita
 
-<!-- Copiar y pegar los ficheros de código fuente y poner fuente Roboto Mono
-Normal - 10pt -->
-<style>
-pre {
-    font-family: "Roboto Mono", sans-serif;
-    font-size: 10pt;
-}
-</style>
-
 ## Hito 1
 
 ### Archivo `scenario.py`
