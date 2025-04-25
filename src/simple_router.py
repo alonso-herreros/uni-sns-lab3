@@ -105,6 +105,7 @@ class SimpleRouter(app_manager.RyuApp):
         if ev.msg.msg_len < ev.msg.total_len:
             self.logger.debug("packet truncated: only %s of %s bytes",
                               ev.msg.msg_len, ev.msg.total_len)
+        # ---- Pre-processing ----
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
@@ -116,25 +117,28 @@ class SimpleRouter(app_manager.RyuApp):
         ip  = pkt.get_protocol(ipv4.ipv4)
 
         if eth.ethertype in [ etypes.ETH_TYPE_LLDP, etypes.ETH_TYPE_IPV6 ]:
-            # ignore lldp packet
-            return
+            return # Ignore LLDP and IPv6
+
         dst = eth.dst
         src = eth.src
 
         dpid = format(datapath.id, "d").zfill(16)
+
+        self.logger.info(f'packet in {dpid}: {src} to {dst} on {in_port}')
+
+        # ---- Learn from packet ----
+        # Learn a mac address
         self.mac_to_port.setdefault(dpid, {})
-
-        self.logger.info("packet in %s %s %s %s", dpid, src, dst, in_port)
-
-        # learn a mac address to avoid FLOOD next time.
         self.mac_to_port[dpid][src] = in_port
 
+        # ---- Process packet ----
         out_port = None
         actions = []
+        # Known destination: forward
         if dst in self.mac_to_port[dpid]:
             out_port = self.mac_to_port[dpid][dst]
         elif ip:
-            self.logger.info(f' IPv4 {ip.src} to {ip.dst} {ip.ttl}')
+            self.logger.info(f' IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
             actions = self.ip_in_handler(datapath, ip)
 
         # Fallback
