@@ -101,7 +101,6 @@ def simpleTestCLI():
 
     net = Mininet(
             topo       = StarTopo(HOSTS),
-            host       = partial(ArpHost, arpEntries=ARP_ENTRIES),
             controller = partial(RemoteController, ip='127.0.0.1'),
             switch     = partial(OVSSwitch, protocols='OpenFlow13')
         )
