@@ -18,10 +18,13 @@ from ryu.controller import ofp_event
 from ryu.controller.handler import CONFIG_DISPATCHER, MAIN_DISPATCHER
 from ryu.controller.handler import set_ev_cls
 from ryu.ofproto import ofproto_v1_3
+from ryu.ofproto import ether
+from ryu.ofproto import inet
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
 from ryu.lib.packet import ether_types as etypes
 from ryu.lib.packet import ipv4
+from ryu.lib.packet import icmp as packet_icmp
 from ipaddress import ip_network, ip_address
 
 # TODO: this is a hard copy of info in scenario.py. Gotta change that.
@@ -57,6 +60,10 @@ class SimpleRouter(app_manager.RyuApp):
             {'net': ip_network(iface['ip'], strict=False),
              'out_iface': n}
             for n, iface in enumerate(INTERFACES['s1'])
+        ]
+        self.ip_addresses = [
+            iface['ip'].split('/')[0]
+            for iface in INTERFACES['s1']
         ]
         self.arpDict = {
             iface['ip'].split('/')[0]: iface['mac']
@@ -170,7 +177,10 @@ class SimpleRouter(app_manager.RyuApp):
     def _ip_in_handler(self, msg, pkt, eth, ip):
         self.logger.info(f' Handling: IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
 
-        self._ip_fw_handler(msg, pkt, eth, ip)
+        if ip.dst in self.ip_addresses:
+            self._ip_rcv_handler(msg, pkt, eth, ip)
+        else:
+            self._ip_fw_handler(msg, pkt, eth, ip)
 
 
     def _ip_fw_handler(self, msg, pkt, eth, ip):
@@ -189,6 +199,59 @@ class SimpleRouter(app_manager.RyuApp):
         )
 
         self.msg_out(msg, actions)
+
+
+    def _ip_rcv_handler(self, msg, pkt, eth, ip):
+        self.logger.info(' Handling IP rcv')
+        header = pkt.get_protocol(packet_icmp.icmp)
+        if header:  self._icmp_rcv_handler(msg, pkt, eth, ip, header)
+        else:     self.logger.info('  Got an IP packet, now what?')
+
+
+    def _icmp_rcv_handler(self, msg, pkt, eth, ip, icmp):
+        self.logger.info(' Handling ICMP rcv')
+        if icmp.type == packet_icmp.ICMP_ECHO_REQUEST:
+            # Send echo response back
+            self.send_icmp_echo_reply(msg, pkt, eth, ip, icmp)
+
+
+    def send_icmp_echo_reply(self, msg, pkt, eth, ip, icmp):
+        datapath = msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        in_port = msg.match['in_port']
+
+        out_port = self.mac_to_port(datapath, eth.src)
+
+        out_eth = ethernet.ethernet(dst=eth.src, src=eth.dst,
+                ethertype=ether.ETH_TYPE_IP)
+
+        # Type 0 Code 0 is Echo Reply
+        out_icmp = packet_icmp.icmp(0, code=0, csum=0, data=icmp.data)
+
+        ip_total_length = ip.header_length * 4 + out_icmp._MIN_LEN
+        if out_icmp.data:
+            ip_total_length += out_icmp.data._MIN_LEN
+            if out_icmp.data.data:
+                ip_total_length += len(out_icmp.data.data)
+
+        out_ip = ipv4.ipv4(ip.version, ip.header_length, ip.tos,
+                           ip_total_length, ip.identification, ip.flags,
+                           ip.offset, ttl=64, proto=inet.IPPROTO_ICMP,
+                           src=ip.dst, dst=ip.src)
+
+        pkt = packet.Packet()
+        pkt.add_protocol(out_eth)
+        pkt.add_protocol(out_ip)
+        pkt.add_protocol(out_icmp)
+        pkt.serialize()
+
+        # Send packet out
+        self.logger.info(' Sending ICMP echo response')
+        actions = [parser.OFPActionOutput(ofproto.OFPP_IN_PORT, 0)]
+        datapath.send_packet_out(buffer_id=0xffffffff, in_port=in_port,
+                                 actions=actions, data=pkt.data)
+
 
 
     def msg_out(self, msg, actions):
