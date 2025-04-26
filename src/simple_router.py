@@ -105,16 +105,13 @@ class SimpleRouter(app_manager.RyuApp):
         if ev.msg.msg_len < ev.msg.total_len:
             self.logger.debug("packet truncated: only %s of %s bytes",
                               ev.msg.msg_len, ev.msg.total_len)
-        # ---- Pre-processing ----
         msg = ev.msg
         datapath = msg.datapath
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
+        dpid = datapath.id
         in_port = msg.match['in_port']
 
         pkt = packet.Packet(msg.data)
         eth = pkt.get_protocols(ethernet.ethernet)[0]
-        ip  = pkt.get_protocol(ipv4.ipv4)
 
         if eth.ethertype in [ etypes.ETH_TYPE_LLDP, etypes.ETH_TYPE_IPV6 ]:
             return # Ignore LLDP and IPv6
@@ -122,9 +119,7 @@ class SimpleRouter(app_manager.RyuApp):
         dst = eth.dst
         src = eth.src
 
-        dpid = format(datapath.id, "d").zfill(16)
-
-        self.logger.info(f'packet in {dpid}: {src} to {dst} on {in_port}')
+        self.logger.info(f'packet in {dpid:016d}: {src} to {dst} on {in_port}')
 
         # ---- Learn from packet ----
         # Learn a mac address
@@ -132,25 +127,32 @@ class SimpleRouter(app_manager.RyuApp):
         self.mac_to_port[dpid][src] = in_port
 
         # ---- Process packet ----
-        out_port = None
-        actions = []
-        # Known destination: forward
+        if eth.dst == datapath.ports[in_port].hw_addr:
+            # Router is the destination - Hand over to specific handler
+            self._packet_rcv_handler(msg, pkt)
+        else:
+            # Forward the ethernet packet as a switch
+            self._eth_fw_handler(msg, pkt, eth)
+
+
+    def _eth_fw_handler(self, msg, pkt, eth):
+        datapath = msg.datapath
+        dpid = datapath.id
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        in_port = msg.match['in_port']
+
         if dst in self.mac_to_port[dpid]:
             out_port = self.mac_to_port[dpid][dst]
-        elif ip:
-            self.logger.info(f' IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
-            actions = self.ip_in_handler(datapath, ip)
-
-        # Fallback
-        if not actions:
-            if not out_port:
-                self.logger.info(' no match, flooding')
-                out_port = ofproto.OFPP_FLOOD
-            actions += [parser.OFPActionOutput(out_port)]
+        else:
+            self.logger.info(' no match, flooding')
+            out_port = ofproto.OFPP_FLOOD
+        actions = [parser.OFPActionOutput(out_port)]
 
         # install a flow to avoid packet_in next time
         if out_port != ofproto.OFPP_FLOOD:
-            match = parser.OFPMatch(in_port=in_port, eth_dst=dst, eth_src=src)
+            match = parser.OFPMatch(in_port=in_port, eth_dst=eth.dst,
+                                    eth_src=eth.src)
             # verify if we have a valid buffer_id, if yes avoid to send both
             # flow_mod & packet_out
             if msg.buffer_id != ofproto.OFP_NO_BUFFER:
@@ -158,15 +160,26 @@ class SimpleRouter(app_manager.RyuApp):
                 return
             else:
                 self.add_flow(datapath, 1, match, actions)
-        data = None
-        if msg.buffer_id == ofproto.OFP_NO_BUFFER:
-            data = msg.data
 
-        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
-                                  in_port=in_port, actions=actions, data=data)
-        datapath.send_msg(out)
+        self.msg_out(msg, actions)
 
-    def ip_in_handler(self, datapath, ip):
+
+    def _packet_rcv_handler(self, msg, pkt):
+        self.logger.info(' Handling rcv')
+        ip = pkt.get_protocol(ipv4.ipv4)
+        if ip:  self._ip_in_handler(msg, pkt, ip)
+        else:   self.logger.info('  Not IP, we can\'t handle this')
+
+
+    def _ip_in_handler(self, msg, pkt, ip):
+        self.logger.info(f' Handling: IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
+
+        actions = self.ip_fw_actions(msg.datapath, ip)
+
+        self.msg_out(msg, actions)
+
+
+    def ip_fw_actions(self, datapath, ip):
         ip_dest = ip_address(ip.dst)
 
         out_port = None
@@ -188,6 +201,18 @@ class SimpleRouter(app_manager.RyuApp):
             datapath, out_port,
             datapath.ports[out_port].hw_addr, self.arpDict[ip.dst]
         )
+
+    def msg_out(self, msg, actions):
+        datapath = msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        in_port = msg.match['in_port']
+
+        data = msg.data if msg.buffer_id == ofproto.OFP_NO_BUFFER else None
+        out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
+                                  in_port=in_port, actions=actions, data=data)
+        datapath.send_msg(out)
+
 
     def actionsForward(self, datapath, port, src, dst):
         parser = datapath.ofproto_parser
