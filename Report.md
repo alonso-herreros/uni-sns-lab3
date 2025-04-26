@@ -652,10 +652,171 @@ output](screenshots/2-h2-ping-10.0.1.1-tcpdump.png)
 
 ## Hito 3
 
+Al tratarse de cambios menores, en este hito solo se han incluido los `diff`s
+de los archivos.
+
 ### Modificaciones a `scenario.py`
+
+```diff
+diff --git a/src/scenario.py b/src/scenario.py
+index 0d64bd1..15749ff 100755
+--- a/src/scenario.py
++++ b/src/scenario.py
+@@ -34,12 +34,12 @@ INTERFACES = {
+ # Define each host through its (hopefully) only interface
+ HOSTS = [ ifaces[0] for hname, ifaces in INTERFACES.items() if hname[0]=='h' ]
+ 
+-# From the interfaces, define the ARP table
+-# ARP_DICT = {i['ip']: i['mac'] for dev in INTERFACES.values() for i in dev}
+-ARP_ENTRIES = [
+-        (dev['ip'].split('/')[0], dev['mac']) # IP address before the '/'
+-        for node in INTERFACES.values() for dev in node
+-    ]
++# # From the interfaces, define the ARP table
++# # ARP_DICT = {i['ip']: i['mac'] for dev in INTERFACES.values() for i in dev}
++# ARP_ENTRIES = [
++#         (dev['ip'].split('/')[0], dev['mac']) # IP address before the '/'
++#         for node in INTERFACES.values() for dev in node
++#     ]
+ 
+ 
+ class StarTopo(Topo):
+@@ -58,13 +58,13 @@ class StarTopo(Topo):
+             host = self.addHost(**opts)
+             self.addLink(host, switch)
+ 
+-class ArpHost(Host):
+-    "Host that's initialized with an ARP cache"
+-
+-    def config(self, arpEntries={}, **params):
+-        r = super().config(**params)
+-        for ip, mac in arpEntries:  self.setARP(ip, mac)
+-        return r
++# class ArpHost(Host):
++#     "Host that's initialized with an ARP cache"
++#
++#     def config(self, arpEntries={}, **params):
++#         r = super().config(**params)
++#         for ip, mac in arpEntries:  self.setARP(ip, mac)
++#         return r
+ 
+ 
+ def int2mac(mac_int: int):
+@@ -101,7 +101,6 @@ def simpleTestCLI():
+ 
+     net = Mininet(
+             topo       = StarTopo(HOSTS),
+-            host       = partial(ArpHost, arpEntries=ARP_ENTRIES),
+             controller = partial(RemoteController, ip='127.0.0.1'),
+             switch     = partial(OVSSwitch, protocols='OpenFlow13')
+         )
+```
 
 ### Modificaciones a `simple_router.py` (2)
 
+```diff
+diff --git a/src/simple_router.py b/src/simple_router.py
+index 0f87552..bb9af85 100755
+--- a/src/simple_router.py
++++ b/src/simple_router.py
+@@ -22,9 +22,10 @@ from ryu.ofproto import ether
+ from ryu.ofproto import inet
+ from ryu.lib.packet import packet
+ from ryu.lib.packet import ethernet
+-from ryu.lib.packet import ether_types as etypes
+ from ryu.lib.packet import ipv4
++from ryu.lib.packet import arp as packet_arp
+ from ryu.lib.packet import icmp as packet_icmp
++from ryu.lib.packet import ether_types as etypes
+ from ipaddress import ip_network, ip_address
+ 
+ # TODO: this is a hard copy of info in scenario.py. Gotta change that.
+@@ -134,7 +135,11 @@ class SimpleRouter(app_manager.RyuApp):
+         self._mac_port_table[dpid][src] = in_port
+ 
+         # ---- Process packet ----
+-        if eth.dst == datapath.ports[in_port].hw_addr:
++        arp = pkt.get_protocol(packet_arp.arp)
++        if arp:
++            # ARP message - possibly a request
++            self._arp_in_handler(msg, pkt, eth, arp)
++        elif eth.dst == datapath.ports[in_port].hw_addr:
+             # Router is the destination - Hand over to specific handler
+             self._packet_rcv_handler(msg, pkt, eth)
+         else:
+@@ -174,6 +179,20 @@ class SimpleRouter(app_manager.RyuApp):
+         else:   self.logger.info('  Not IP, we can\'t handle this')
+ 
+ 
++    def _arp_in_handler(self, msg, pkt, eth, arp):
++        self.logger.info(f' Handling: ARP from {arp.src_ip} to {arp.dst_ip}')
++        if arp.dst_ip in self.ip_addresses:
++            self._arp_rcv_handler(msg, pkt, eth, arp)
++        else:
++            self._eth_fw_handler(msg, pkt, eth)
++
++
++    def _arp_rcv_handler(self, msg, pkt, eth, arp):
++        self.logger.info(' Handling ARP rcv')
++        if arp.opcode == packet_arp.ARP_REQUEST:
++            self.send_arp_reply(msg, pkt, eth, arp)
++
++
+     def _ip_in_handler(self, msg, pkt, eth, ip):
+         self.logger.info(f' Handling: IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
+ 
+@@ -215,6 +234,38 @@ class SimpleRouter(app_manager.RyuApp):
+             self.send_icmp_echo_reply(msg, pkt, eth, ip, icmp)
+ 
+ 
++    def send_arp_reply(self, msg, pkt, eth, arp):
++        datapath = msg.datapath
++        ofproto = datapath.ofproto
++        parser = datapath.ofproto_parser
++        in_port = msg.match['in_port']
++
++        src_mac = datapath.ports[in_port].hw_addr
++        dst_mac = arp.src_mac
++        out_port = in_port
++
++        # This is required.
++        in_port = ofproto.OFPP_CONTROLLER
++
++        out_eth = ethernet.ethernet(dst=dst_mac, src=src_mac,
++                ethertype=ether.ETH_TYPE_ARP)
++
++        out_arp = packet_arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6,
++                plen=4, opcode=packet_arp.ARP_REPLY, src_mac=src_mac,
++                src_ip=arp.dst_ip, dst_mac=dst_mac, dst_ip=arp.src_ip)
++
++        pkt = packet.Packet()
++        pkt.add_protocol(out_eth)
++        pkt.add_protocol(out_arp)
++        pkt.serialize()
++
++        # Send packet out
++        self.logger.info(' Sending ARP response')
++        actions = [parser.OFPActionOutput(out_port, 0)]
++        datapath.send_packet_out(buffer_id=0xffffffff, in_port=in_port,
++                                 actions=actions, data=pkt.data)
++
++
+     def send_icmp_echo_reply(self, msg, pkt, eth, ip, icmp):
+         datapath = msg.datapath
+         ofproto = datapath.ofproto
+```
+
 ### Wireshark: tráfico para el comando `h1 ping -c 2 h2`
 
+En lugar de Wireshark se ha usado `tcpdump` para capturar el tráfico, ya que no
+requiere una salida a interfaz gráfica. Se puede observar el tráfico en la
+captura del apartado siguiente.
+
 ### Comando `h1 ping -c 2 h2`
+
+En la siguiente captura de pantalla se puede observar el tráfico exitoso entre
+los dos extremos, así como el tráfico ARP que se genera al principio de la
+comunicación entre el host y el router.
+
+![Mininet command line output and tcpdump
+output](screenshots/3.2-h1-ping-h2-arp.png)
