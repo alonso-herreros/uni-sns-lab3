@@ -170,12 +170,11 @@ class SimpleRouter(app_manager.RyuApp):
     def _ip_in_handler(self, msg, pkt, eth, ip):
         self.logger.info(f' Handling: IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
 
-        actions = self.ip_fw_actions(msg.datapath, ip)
-
-        self.msg_out(msg, actions)
+        self._ip_fw_handler(msg, pkt, eth, ip)
 
 
-    def ip_fw_actions(self, datapath, ip):
+    def _ip_fw_handler(self, msg, pkt, eth, ip):
+        datapath = msg.datapath
         ip_dest = ip_address(ip.dst)
 
         out_port = self.ip_to_port(datapath, ip_dest)
@@ -183,10 +182,14 @@ class SimpleRouter(app_manager.RyuApp):
         if not out_port:  return None
 
         self.logger.info(f'  route match to output port {out_port}')
-        return self.actionsForward(
+
+        actions = self.actionsForward(
             datapath, out_port,
             datapath.ports[out_port].hw_addr, self.arpDict[ip.dst]
         )
+
+        self.msg_out(msg, actions)
+
 
     def msg_out(self, msg, actions):
         datapath = msg.datapath
