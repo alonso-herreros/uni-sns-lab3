@@ -221,8 +221,6 @@ class SimpleRouter(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         in_port = msg.match['in_port']
 
-        out_port = self.mac_to_port(datapath, eth.src)
-
         out_eth = ethernet.ethernet(dst=eth.src, src=eth.dst,
                 ethertype=ether.ETH_TYPE_IP)
 
