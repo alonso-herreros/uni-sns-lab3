@@ -149,7 +149,6 @@ class SimpleRouter(app_manager.RyuApp):
 
     def _eth_fw_handler(self, msg, pkt, eth):
         datapath = msg.datapath
-        dpid = datapath.id
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         in_port = msg.match['in_port']
@@ -222,8 +221,8 @@ class SimpleRouter(app_manager.RyuApp):
 
     def _ip_rcv_handler(self, msg, pkt, eth, ip):
         self.logger.info(' Handling IP rcv')
-        header = pkt.get_protocol(packet_icmp.icmp)
-        if header:  self._icmp_rcv_handler(msg, pkt, eth, ip, header)
+        icmp = pkt.get_protocol(packet_icmp.icmp)
+        if icmp:  self._icmp_rcv_handler(msg, pkt, eth, ip, icmp)
         else:     self.logger.info('  Got an IP packet, now what?')
 
 
