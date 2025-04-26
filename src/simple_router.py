@@ -22,9 +22,10 @@ from ryu.ofproto import ether
 from ryu.ofproto import inet
 from ryu.lib.packet import packet
 from ryu.lib.packet import ethernet
-from ryu.lib.packet import ether_types as etypes
 from ryu.lib.packet import ipv4
+from ryu.lib.packet import arp as packet_arp
 from ryu.lib.packet import icmp as packet_icmp
+from ryu.lib.packet import ether_types as etypes
 from ipaddress import ip_network, ip_address
 
 # TODO: this is a hard copy of info in scenario.py. Gotta change that.
@@ -213,6 +214,38 @@ class SimpleRouter(app_manager.RyuApp):
         if icmp.type == packet_icmp.ICMP_ECHO_REQUEST:
             # Send echo response back
             self.send_icmp_echo_reply(msg, pkt, eth, ip, icmp)
+
+
+    def send_arp_reply(self, msg, pkt, eth, arp):
+        datapath = msg.datapath
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        in_port = msg.match['in_port']
+
+        src_mac = datapath.ports[in_port].hw_addr
+        dst_mac = arp.src_mac
+        out_port = in_port
+
+        # This is required.
+        in_port = ofproto.OFPP_CONTROLLER
+
+        out_eth = ethernet.ethernet(dst=dst_mac, src=src_mac,
+                ethertype=ether.ETH_TYPE_ARP)
+
+        out_arp = packet_arp.arp(hwtype=1, proto=ether.ETH_TYPE_IP, hlen=6,
+                plen=4, opcode=packet_arp.ARP_REPLY, src_mac=src_mac,
+                src_ip=arp.dst_ip, dst_mac=dst_mac, dst_ip=arp.src_ip)
+
+        pkt = packet.Packet()
+        pkt.add_protocol(out_eth)
+        pkt.add_protocol(out_arp)
+        pkt.serialize()
+
+        # Send packet out
+        self.logger.info(' Sending ARP response')
+        actions = [parser.OFPActionOutput(out_port, 0)]
+        datapath.send_packet_out(buffer_id=0xffffffff, in_port=in_port,
+                                 actions=actions, data=pkt.data)
 
 
     def send_icmp_echo_reply(self, msg, pkt, eth, ip, icmp):
