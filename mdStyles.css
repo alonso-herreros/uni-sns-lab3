@@ -29,6 +29,9 @@ p { text-align: justify; }
 .katex { font-size: 1.05em; }
 
 /* #region Inline and fenced code */
+pre, pre code { /* This allows page breaks. Long code blocks are difficult. */
+    display: block;
+}
 code {
     font-size: 80%;
     font-feature-settings: var(--vscode-editor-font-features);
