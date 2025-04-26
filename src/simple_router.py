@@ -49,7 +49,7 @@ class SimpleRouter(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(SimpleRouter, self).__init__(*args, **kwargs)
-        self.mac_to_port = {}
+        self._mac_port_table = {}
         # This routing doesn't support next hop, just output interface.
         # I'm making a distinction between 'interfaces' data from INTERFACES
         # and 'ports' data from the datapath
@@ -123,8 +123,8 @@ class SimpleRouter(app_manager.RyuApp):
 
         # ---- Learn from packet ----
         # Learn a mac address
-        self.mac_to_port.setdefault(dpid, {})
-        self.mac_to_port[dpid][src] = in_port
+        self._mac_port_table.setdefault(dpid, {})
+        self._mac_port_table[dpid][src] = in_port
 
         # ---- Process packet ----
         if eth.dst == datapath.ports[in_port].hw_addr:
@@ -142,11 +142,7 @@ class SimpleRouter(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         in_port = msg.match['in_port']
 
-        if dst in self.mac_to_port[dpid]:
-            out_port = self.mac_to_port[dpid][dst]
-        else:
-            self.logger.info(' no match, flooding')
-            out_port = ofproto.OFPP_FLOOD
+        out_port = self.mac_to_port(datapath, eth.dst)
         actions = [parser.OFPActionOutput(out_port)]
 
         # install a flow to avoid packet_in next time
@@ -182,17 +178,7 @@ class SimpleRouter(app_manager.RyuApp):
     def ip_fw_actions(self, datapath, ip):
         ip_dest = ip_address(ip.dst)
 
-        out_port = None
-        for rule in self.routes:
-            if ip_dest in rule['net']:
-                if 'out_port' not in rule:
-                    # Map an 'interface' as defined in INTERFACES to a real port
-                    out_mac = INTERFACES['s1'][rule['out_iface']]['mac']
-                    rule['out_port'] = next((
-                        port_n for port_n, port in datapath.ports.items()
-                        if port.hw_addr == out_mac and port.config != 1
-                    ))
-                out_port = rule['out_port']
+        out_port = self.ip_to_port(datapath, ip_dest)
 
         if not out_port:  return None
 
@@ -212,6 +198,28 @@ class SimpleRouter(app_manager.RyuApp):
         out = parser.OFPPacketOut(datapath=datapath, buffer_id=msg.buffer_id,
                                   in_port=in_port, actions=actions, data=data)
         datapath.send_msg(out)
+
+
+    def ip_to_port(self, datapath, ip_dest):
+        out_port = None
+        for rule in self.routes:
+            if ip_dest in rule['net']:
+                if 'out_port' not in rule:
+                    # Map an 'interface' as defined in INTERFACES to a real port
+                    out_mac = INTERFACES['s1'][rule['out_iface']]['mac']
+                    rule['out_port'] = next((
+                        port_n for port_n, port in datapath.ports.items()
+                        if port.hw_addr == out_mac and port.config != 1
+                    ))
+                out_port = rule['out_port']
+
+        return out_port
+
+
+    def mac_to_port(self, datapath, mac_dst):
+        dpid = datapath.id
+        ofproto = datapath.ofproto
+        return self._mac_port_table[dpid].get(mac_dst, ofproto.OFPP_FLOOD)
 
 
     def actionsForward(self, datapath, port, src, dst):
