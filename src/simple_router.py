@@ -129,7 +129,7 @@ class SimpleRouter(app_manager.RyuApp):
         # ---- Process packet ----
         if eth.dst == datapath.ports[in_port].hw_addr:
             # Router is the destination - Hand over to specific handler
-            self._packet_rcv_handler(msg, pkt)
+            self._packet_rcv_handler(msg, pkt, eth)
         else:
             # Forward the ethernet packet as a switch
             self._eth_fw_handler(msg, pkt, eth)
@@ -160,14 +160,14 @@ class SimpleRouter(app_manager.RyuApp):
         self.msg_out(msg, actions)
 
 
-    def _packet_rcv_handler(self, msg, pkt):
+    def _packet_rcv_handler(self, msg, pkt, eth):
         self.logger.info(' Handling rcv')
         ip = pkt.get_protocol(ipv4.ipv4)
-        if ip:  self._ip_in_handler(msg, pkt, ip)
+        if ip:  self._ip_in_handler(msg, pkt, eth, ip)
         else:   self.logger.info('  Not IP, we can\'t handle this')
 
 
-    def _ip_in_handler(self, msg, pkt, ip):
+    def _ip_in_handler(self, msg, pkt, eth, ip):
         self.logger.info(f' Handling: IPv4 {ip.src} to {ip.dst} ({ip.ttl})')
 
         actions = self.ip_fw_actions(msg.datapath, ip)
