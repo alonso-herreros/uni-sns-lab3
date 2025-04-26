@@ -135,7 +135,11 @@ class SimpleRouter(app_manager.RyuApp):
         self._mac_port_table[dpid][src] = in_port
 
         # ---- Process packet ----
-        if eth.dst == datapath.ports[in_port].hw_addr:
+        arp = pkt.get_protocol(packet_arp.arp)
+        if arp:
+            # ARP message - possibly a request
+            self._arp_in_handler(msg, pkt, eth, arp)
+        elif eth.dst == datapath.ports[in_port].hw_addr:
             # Router is the destination - Hand over to specific handler
             self._packet_rcv_handler(msg, pkt, eth)
         else:
@@ -173,6 +177,20 @@ class SimpleRouter(app_manager.RyuApp):
         ip = pkt.get_protocol(ipv4.ipv4)
         if ip:  self._ip_in_handler(msg, pkt, eth, ip)
         else:   self.logger.info('  Not IP, we can\'t handle this')
+
+
+    def _arp_in_handler(self, msg, pkt, eth, arp):
+        self.logger.info(f' Handling: ARP from {arp.src_ip} to {arp.dst_ip}')
+        if arp.dst_ip in self.ip_addresses:
+            self._arp_rcv_handler(msg, pkt, eth, arp)
+        else:
+            self._eth_fw_handler(msg, pkt, eth)
+
+
+    def _arp_rcv_handler(self, msg, pkt, eth, arp):
+        self.logger.info(' Handling ARP rcv')
+        if arp.opcode == packet_arp.ARP_REQUEST:
+            self.send_arp_reply(msg, pkt, eth, arp)
 
 
     def _ip_in_handler(self, msg, pkt, eth, ip):
